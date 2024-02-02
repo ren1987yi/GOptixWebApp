@@ -17,6 +17,8 @@ import { OutlinePass } from './threejs/jsm/postprocessing/OutlinePass.js';
 import { ShaderPass } from "./threejs/jsm/postprocessing/ShaderPass.js"
 import { FXAAShader } from "./threejs/jsm/shaders/FXAAShader.js"
 import Stats from './threejs/jsm/libs/stats.module.js';
+import { forEach, parseInt } from 'lodash';
+import TWEEN from '@tweenjs/tween.js';
 
 var camera;//相机
 var scene;
@@ -91,10 +93,29 @@ class PickHelper {
 			//outlinePass.selectedObjects = [intersects[0].object.ancestors];
 			console.log("select Object:");
 			console.log(intersects[0]);
+			
+
+
+
+
+			//迭代找出可选中的对象
+			var _obj = intersects[0].object;
+			if(cfgOption.wireframe || 1){
+				while(_obj.type != 'Mesh'){ //先是这个条件咯
+					if(_obj.parent != undefined){
+						_obj = _obj.parent;
+					}else{
+						break;
+					}
+				}
+			}
+
+
+
 
 			var data = {
 				type: "SelectObject",
-				args: [intersects[0].object.name],
+				args: [_obj.name],
 				ui: cfgOption.ui
 			};
 
@@ -109,7 +130,7 @@ class PickHelper {
 				});
 
 
-			this.pickedObject = intersects[0].object;
+			this.pickedObject =_obj;
 			// // 保存它的颜色
 			// this.pickedObjectSavedColor = this.pickedObject.material.emissive.getHex();
 			// // 设置它的发光为 黄色/红色闪烁
@@ -122,6 +143,22 @@ class PickHelper {
 		} else {
 			//RenderSelectedObject();
 			//selectedObject.object = undefined;
+
+			var data = {
+				type: "SelectObject",
+				args: [],
+				ui: cfgOption.ui
+			};
+
+			axios.post(cfgOption.serverurl, data, {
+				headers: { "Content-type": "application/json" },
+			})
+				.then(function (response) {
+					console.log(response);
+				})
+				.catch(function (error) {
+					console.log(error);
+				});
 		}
 
 		if (this.pickedObject != undefined) {
@@ -133,18 +170,38 @@ class PickHelper {
 	}
 }
 
+class Animation{
+	constructor(){
+		this.action = null;
+	}
 
+	SetPosition=(object,value)=>{
+		var action=new TWEEN.Tween(object.position) // 初始值：模型的初始位置
+    	.to(value,1000) // 目标值，毫秒数
+    	.start();
+	};
+
+	SetPositionX=(object,value)=>{
+		this.action=new TWEEN.Tween(object.position.x) // 初始值：模型的初始位置
+    	.to(value,1000) // 目标值，毫秒数
+    	.start();
+	};
+
+
+}
 
 
 const pickPosition = { x: 0, y: 0 };
 const pickHelper = new PickHelper();
 
+const animation = new Animation();
 
 var cfgOption = {
 	fullscreen: true,
 	modelscale: [1, 1, 1],
 	background: 0x000000,
-	serverurl: "./common_api",
+	serverurl: "./three3d/common_api",
+	websocketurl:null,
 	// postSelObject: "./selectObject",
 	// postSyncState: "./syncState",
 	modelurl: "factory5.fbx",
@@ -338,10 +395,11 @@ function Init(option) {
 	function animate() {
 		stats.update();
 		renderer.render(scene, camera);
-
+		
 		control.update();
 		requestAnimationFrame(animate);
-
+		TWEEN.update();
+		
 		if (pickHelper.pickedObject != undefined) {
 
 
@@ -529,15 +587,19 @@ function LoadedModel(group, object) {
 
 	// m.position.set(0,0,0);
 
-	CollectModelUserData(m);
-	group.add(m);
 	if (cfgOption.wireframe) {
-
-		edgeGeometryWireframe(m, true);
-		lineGroup.scale.set(sx, sy, sz);
+		
+		edgeGeometryWireframe(m, true,group);
+		// lineGroup.scale.set(sx, sy, sz);
 	}
+	
+	group.add(m);
+	CollectModelUserData(m);
 
+	webSocketConnect();
+	
 }
+
 
 
 // EdgesGeometry线框1
@@ -555,7 +617,7 @@ const faceMaterial = new THREE.MeshBasicMaterial({
 	depthWrite: false, // 不遮挡后面的模型
 	// depthWrite: false // 关闭深度测试
 });
-function edgeGeometryWireframe(model, isShow) {
+function edgeGeometryWireframe(model, isShow,group) {
 	//要按model 结构
 	if (model) {
 		if (!lineGroup) {
@@ -563,16 +625,16 @@ function edgeGeometryWireframe(model, isShow) {
 
 			enumAddWireframe(model, lineGroup);
 
-			scene.add(lineGroup);
+			// group.add(lineGroup);
 		}
 		// model.visible = !isShow;
 
-		lineGroup.rotation.x = model.rotation.x;
-		lineGroup.rotation.y = model.rotation.y;
-		lineGroup.rotation.z = model.rotation.z;
-		lineGroup.position.x = model.position.x;
-		lineGroup.position.y = model.position.y;
-		lineGroup.position.z = model.position.z;
+		// lineGroup.rotation.x = model.rotation.x;
+		// lineGroup.rotation.y = model.rotation.y;
+		// lineGroup.rotation.z = model.rotation.z;
+		// lineGroup.position.x = model.position.x;
+		// lineGroup.position.y = model.position.y;
+		// lineGroup.position.z = model.position.z;
 
 		lineGroup.visible = isShow;
 	}
@@ -585,18 +647,18 @@ function enumAddWireframe(modelgroup, linegroup) {
 		var lineS = buildWireframe(child);
 		if (lineS) {
 
-			linegroup.add(lineS);
 			enumAddWireframe(child, lineS);
+			child.add(lineS);
 		} else {
 			var gg = new THREE.Group();
-			gg.position.x = child.position.x;
-			gg.position.y = child.position.y;
-			gg.position.z = child.position.z;
-			gg.rotation.x = child.rotation.x;
-			gg.rotation.y = child.rotation.y;
-			gg.rotation.z = child.rotation.z;
-			linegroup.add(gg);
+			// gg.position.x = child.position.x;
+			// gg.position.y = child.position.y;
+			// gg.position.z = child.position.z;
+			// gg.rotation.x = child.rotation.x;
+			// gg.rotation.y = child.rotation.y;
+			// gg.rotation.z = child.rotation.z;
 			enumAddWireframe(child, gg);
+			child.add(gg);
 		}
 	});
 }
@@ -607,12 +669,12 @@ function buildWireframe(obj, parent) {
 	if (obj.isMesh) {
 		let edges = new THREE.EdgesGeometry(obj.geometry);
 		let lineS = new THREE.LineSegments(edges, lineMaterial);
-		lineS.position.x = obj.position.x;
-		lineS.position.y = obj.position.y;
-		lineS.position.z = obj.position.z;
-		lineS.rotation.x = obj.rotation.x;
-		lineS.rotation.y = obj.rotation.y;
-		lineS.rotation.z = obj.rotation.z;
+		// lineS.position.x = obj.position.x;
+		// lineS.position.y = obj.position.y;
+		// lineS.position.z = obj.position.z;
+		// lineS.rotation.x = obj.rotation.x;
+		// lineS.rotation.y = obj.rotation.y;
+		// lineS.rotation.z = obj.rotation.z;
 
 		obj.material = faceMaterial;
 
@@ -664,6 +726,70 @@ function CollectModelUserData(model) {
 	});
 
 }
+
+const WebSocketProtocolType = {
+	Subscribe:"subscribe",
+	UnSubscribe:"unsubscribe",
+}
+var angle = 0;
+var EMPTY_QUAT = new THREE.Quaternion();
+
+function AngleToRad(angle) {
+    console.log("angle to rad", THREE.MathUtils.degToRad(angle));
+    return THREE.MathUtils.degToRad(angle);
+}
+function webSocketConnect(){
+	const socket = new WebSocket(cfgOption.websocketurl);
+
+	socket.onopen = ()=>{
+
+		var tags = new Array();
+		bindObjects.forEach(item => {
+			
+			tags.push(item.value);
+		});
+
+		var dto = {
+			type:WebSocketProtocolType.Subscribe,
+			args:tags
+		}
+		socket.send( JSON.stringify(dto));
+
+	};
+
+
+	socket.onmessage = (e)=>{
+		if (typeof e.data === 'string') {
+			console.log("Received: '" + e.data + "'");
+
+			var kvs = JSON.parse(e.data);
+			kvs.forEach(kv => {
+				let val = kv.value;
+				bindObjects.forEach(item => {
+			
+					// item.model.location.x = val;
+					// item.model.translateX(val);
+					item.model.position.x = val;
+
+					// animation.SetPositionX(item.model,val);
+				});
+				var angle = val;
+				let obj = model.children[0].children[2];
+				
+				obj.setRotationFromQuaternion(EMPTY_QUAT);
+				obj.rotateOnAxis(VECTOR_X, AngleToRad(angle));
+				obj.rotateOnAxis(VECTOR_Y, AngleToRad(angle));
+				obj.rotateOnAxis(VECTOR_Z, AngleToRad(angle));
+			});
+		}
+		angle += 1;
+		
+
+	
+	}
+
+}
+
 
 
 
@@ -742,6 +868,10 @@ export function InitThree3D() {
 	if (val != undefined) {
 		option.ui = val;
 	}
+
+
+	option.websocketurl = "ws://" + url.hostname + ":" + (parseInt(url.port)+1).toString() + "/three3d";
+
 
 	Init(option);
 	// document.body.style.cssText += 'overflow: hidden;';

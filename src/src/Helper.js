@@ -50,3 +50,22 @@ export function escape2Html(str) {
     });
 
 }
+
+
+
+
+export function base64_to_object(val){
+    try {
+        if(!isNull(val)){
+
+            let blob = b64_to_utf8(val);
+            let obj = looseJsonParse(blob);
+            return obj;
+        }else{
+            return null;
+        }
+    } catch (error) {
+        console.error(error);
+        return null;
+    }
+}
