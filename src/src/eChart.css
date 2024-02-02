@@ -1,0 +1,16 @@
+body {
+    overflow-y: hidden; /* 隐藏垂直滚动条 */
+    overflow-x: hidden; /* 隐藏水平滚动条 */
+    /* background-color: black; */
+    }
+
+#chart,
+html,
+body {
+width: 100%;
+}
+
+
+#chart {
+height: 100vh;
+}
