@@ -19,6 +19,9 @@ import { FXAAShader } from "./threejs/jsm/shaders/FXAAShader.js"
 import Stats from './threejs/jsm/libs/stats.module.js';
 import { forEach, parseInt } from 'lodash';
 import TWEEN from '@tweenjs/tween.js';
+import gsap from 'gsap';
+
+
 
 var camera;//相机
 var scene;
@@ -27,29 +30,45 @@ var control;
 var model;
 var composer, renderPass, outlinePass;
 var canvas;
+
+
 const stats = new Stats();
 
 class PickHelper {
 	constructor() {
+		this.SelectEffect = 'color1';
 		this.raycaster = new THREE.Raycaster();
+		this.lastpackedObject = null;
 		this.pickedObject = null;
 		this.pickedObjectSavedColor = 0;
 
-		this.time = 0;
-		// setInterval(()=>{
-		// 	if(this.pickedObject != undefined){
-		// 		this.pickedObject.material.emissive.setHex((this.time ) % 2 >= 1 ? 0xFFFF00 : 0xFF0000);
-		// 	}
-		// 	this.time ++;
-		// 	if(this.time > 100){
-		// 		this.time = 0;
-		// 	}
+		if (this.SelectEffect == 'color') {
 
-		// },1000);
+			this.time = 0;
+			setInterval(() => {
+				if (this.pickedObject != undefined) {
+					this.pickedObject.material.emissive.setHex((this.time) % 2 >= 1 ? 0xFFFFFF20 : this.pickedObjectSavedColor);
+				}
+				this.time++;
+				if (this.time > 100) {
+					this.time = 0;
+				}
+
+			}, 500);
+		}
 	}
 	pick(scene, canvas, camera, time, event) {
-		// 恢复上一个被拾取对象的颜色
 
+		/**
+		 * 上一次的对象
+		 */
+		let oldObject = this.pickedObject;
+
+		//上一次的颜色
+		let oldColor = this.pickedObjectSavedColor;
+
+
+		// 恢复上一个被拾取对象的颜色
 		if (this.pickedObject) {
 			// this.pickedObject.material.emissive.setHex(this.pickedObjectSavedColor);
 			this.pickedObject = undefined;
@@ -93,18 +112,18 @@ class PickHelper {
 			//outlinePass.selectedObjects = [intersects[0].object.ancestors];
 			console.log("select Object:");
 			console.log(intersects[0]);
-			
+
 
 
 
 
 			//迭代找出可选中的对象
 			var _obj = intersects[0].object;
-			if(cfgOption.wireframe || 1){
-				while(_obj.type != 'Mesh'){ //先是这个条件咯
-					if(_obj.parent != undefined){
+			if (cfgOption.wireframe || 1) {
+				while (_obj.type != 'Mesh') { //先是这个条件咯
+					if (_obj.parent != undefined) {
 						_obj = _obj.parent;
-					}else{
+					} else {
 						break;
 					}
 				}
@@ -130,9 +149,9 @@ class PickHelper {
 				});
 
 
-			this.pickedObject =_obj;
+			this.pickedObject = _obj;
 			// // 保存它的颜色
-			// this.pickedObjectSavedColor = this.pickedObject.material.emissive.getHex();
+			this.pickedObjectSavedColor = this.pickedObject.material.emissive.getHex();
 			// // 设置它的发光为 黄色/红色闪烁
 			// this.pickedObject.material.emissive.setHex((time * 8) % 2 > 1 ? 0xFFFF00 : 0xFF0000);
 
@@ -161,47 +180,45 @@ class PickHelper {
 				});
 		}
 
-		if (this.pickedObject != undefined) {
-			SetupEffect(width, height, [this.pickedObject]);
 
+
+
+		if (this.SelectEffect == 'color') {
+			if (this.pickedObject != undefined) {
+
+				oldObject.material.emissive.setHex(oldColor);
+
+			} else {
+
+				//设置为原来的颜色
+				oldObject.material.emissive.setHex(oldColor);
+
+			}
 		} else {
-			SetupEffect(width, height, []);
+			if (this.pickedObject != undefined) {
+				SetupEffect(width, height, [this.pickedObject]);
+
+			} else {
+				SetupEffect(width, height, []);
+			}
 		}
+
+
 	}
 }
 
-class Animation{
-	constructor(){
-		this.action = null;
-	}
-
-	SetPosition=(object,value)=>{
-		var action=new TWEEN.Tween(object.position) // 初始值：模型的初始位置
-    	.to(value,1000) // 目标值，毫秒数
-    	.start();
-	};
-
-	SetPositionX=(object,value)=>{
-		this.action=new TWEEN.Tween(object.position.x) // 初始值：模型的初始位置
-    	.to(value,1000) // 目标值，毫秒数
-    	.start();
-	};
-
-
-}
 
 
 const pickPosition = { x: 0, y: 0 };
 const pickHelper = new PickHelper();
 
-const animation = new Animation();
 
 var cfgOption = {
 	fullscreen: true,
 	modelscale: [1, 1, 1],
 	background: 0x000000,
 	serverurl: "./three3d/common_api",
-	websocketurl:null,
+	websocketurl: null,
 	// postSelObject: "./selectObject",
 	// postSyncState: "./syncState",
 	modelurl: "factory5.fbx",
@@ -350,7 +367,7 @@ function Init(option) {
 	}
 
 
-
+	clock = new THREE.Clock();
 	SetupScene(option);
 	SetupRender(width, height);
 
@@ -383,6 +400,8 @@ function Init(option) {
 	}
 
 	//load model 所有的userData把绑定的变量列出来
+	const axesHelper = new THREE.AxesHelper(5);
+	scene.add(axesHelper);
 	scene.add(model);
 	// if (model != undefined) {
 
@@ -393,20 +412,25 @@ function Init(option) {
 
 	// var xx = 0;
 	function animate() {
-		stats.update();
-		renderer.render(scene, camera);
-		
-		control.update();
+		const dt = clock.getDelta();
+
+		if (mixer) mixer.update(dt);
+
 		requestAnimationFrame(animate);
-		TWEEN.update();
-		
-		if (pickHelper.pickedObject != undefined) {
+		renderer.render(scene, camera);
+
+		control.update();
+		// TWEEN.update();
+
+		if (pickHelper.pickedObject != undefined && pickHelper.SelectEffect != 'color') {
 
 
 			if (composer) {
 				composer.render();
 			}
 		}
+
+		stats.update();
 	}
 
 
@@ -470,8 +494,8 @@ function LoadModel(url, option) {
 
 
 
-
-
+var mixer, clock;
+var ModelActions = {};
 function LoadGLTF(url, option) {
 	var group = new THREE.Group();
 
@@ -483,8 +507,20 @@ function LoadGLTF(url, option) {
 
 
 	loader.load(url, function (gltf) {
-
 		var m = gltf.scene;
+		mixer = new THREE.AnimationMixer(m);
+		ModelActions = {};
+
+		var firstName = null;
+		for (let i = 0; i < gltf.animations.length; i++) {
+			const clip = gltf.animations[i];
+			const action = mixer.clipAction(clip);
+			ModelActions[clip.name] = action;
+			action.loop = THREE.LoopOnce;
+			firstName = clip.name;
+		}
+
+
 		LoadedModel(group, m);
 		// // var m = object;
 		// console.log("模型", m);
@@ -513,7 +549,15 @@ function LoadGLTF(url, option) {
 		// 	edgeGeometryWireframe(m, true);
 		// 	lineGroup.scale.set(sx, sy, sz);
 		// }
+		// var _action = ModelActions[firstName];
+		// _action.loop = THREE.LoopRepeat;
+		// _action
+		// 	.reset()
+		// 	.setEffectiveTimeScale(1)
+		// 	.setEffectiveWeight(1)
+		// 	.fadeIn(2)
 
+		// 	.play();
 
 	}
 		, undefined
@@ -524,7 +568,6 @@ function LoadGLTF(url, option) {
 
 	);
 	group.visible = true;
-
 
 	return group;
 }
@@ -588,16 +631,16 @@ function LoadedModel(group, object) {
 	// m.position.set(0,0,0);
 
 	if (cfgOption.wireframe) {
-		
-		edgeGeometryWireframe(m, true,group);
+
+		edgeGeometryWireframe(m, true, group);
 		// lineGroup.scale.set(sx, sy, sz);
 	}
-	
+
 	group.add(m);
 	CollectModelUserData(m);
 
 	webSocketConnect();
-	
+
 }
 
 
@@ -617,7 +660,7 @@ const faceMaterial = new THREE.MeshBasicMaterial({
 	depthWrite: false, // 不遮挡后面的模型
 	// depthWrite: false // 关闭深度测试
 });
-function edgeGeometryWireframe(model, isShow,group) {
+function edgeGeometryWireframe(model, isShow, group) {
 	//要按model 结构
 	if (model) {
 		if (!lineGroup) {
@@ -692,16 +735,19 @@ function buildWireframe(obj, parent) {
 /**
  * 已经绑定的动画属性和optix变量
  */
-var bindObjects = [];
+const animations = [];
+var dcTagAnimation = {};
 
-const CUSTOME_PROPERTY_FIX = 'optix_';
+
+const CUSTOME_PROPERTY_FIX = 'optix:';
 
 /**
  * 搜集模型内 userData中，定义的optix交互属性
  * @param {THREE.Mesh} model 
  */
 function CollectModelUserData(model) {
-	bindObjects = [];
+	animations.length = 0;
+	dcTagAnimation = {};
 	console.log(model.name);
 
 	function _collect(root) {
@@ -711,8 +757,12 @@ function CollectModelUserData(model) {
 				if (key.toLowerCase().startsWith(CUSTOME_PROPERTY_FIX)) {
 					console.log(key + ":" + root.userData[key]);
 					var _key = key.substring(6);
-					var b = new ObjectPropetyBind(root, _key, root.userData[key]);
-					bindObjects.push(b);
+					var b = new Object3DWithAnimation(root, _key, root.userData[key]);
+					animations.push(b);
+					if (!dcTagAnimation.hasOwnProperty(b.tagpath)) {
+						dcTagAnimation[b.tagpath] = [];
+					}
+					dcTagAnimation[b.tagpath].push(b);
 				}
 			});
 		}
@@ -728,83 +778,231 @@ function CollectModelUserData(model) {
 }
 
 const WebSocketProtocolType = {
-	Subscribe:"subscribe",
-	UnSubscribe:"unsubscribe",
+	Subscribe: "subscribe",
+	UnSubscribe: "unsubscribe",
 }
 var angle = 0;
 var EMPTY_QUAT = new THREE.Quaternion();
 
 function AngleToRad(angle) {
-    console.log("angle to rad", THREE.MathUtils.degToRad(angle));
-    return THREE.MathUtils.degToRad(angle);
+	console.log("angle to rad", THREE.MathUtils.degToRad(angle));
+	return THREE.MathUtils.degToRad(angle);
 }
-function webSocketConnect(){
+function webSocketConnect() {
 	const socket = new WebSocket(cfgOption.websocketurl);
 
-	socket.onopen = ()=>{
+	socket.onopen = () => {
 
-		var tags = new Array();
-		bindObjects.forEach(item => {
-			
-			tags.push(item.value);
-		});
+		// var tags = new Array();
+		// animations.forEach(item => {
+
+		// 	tags.push(item.tagpath);
+		// });
+		let tags = Object.keys(dcTagAnimation);
+
 
 		var dto = {
-			type:WebSocketProtocolType.Subscribe,
-			args:tags
+			type: WebSocketProtocolType.Subscribe,
+			args: tags
 		}
-		socket.send( JSON.stringify(dto));
+		socket.send(JSON.stringify(dto));
 
 	};
 
 
-	socket.onmessage = (e)=>{
+	socket.onmessage = (e) => {
 		if (typeof e.data === 'string') {
 			console.log("Received: '" + e.data + "'");
 
 			var kvs = JSON.parse(e.data);
 			kvs.forEach(kv => {
 				let val = kv.value;
-				bindObjects.forEach(item => {
-			
-					// item.model.location.x = val;
-					// item.model.translateX(val);
-					item.model.position.x = val;
+				let key = kv.name;
+				if (dcTagAnimation[key] != undefined && Array.isArray(dcTagAnimation[key])) {
+					dcTagAnimation[key].forEach(item => {
 
-					// animation.SetPositionX(item.model,val);
-				});
-				var angle = val;
-				let obj = model.children[0].children[2];
-				
-				obj.setRotationFromQuaternion(EMPTY_QUAT);
-				obj.rotateOnAxis(VECTOR_X, AngleToRad(angle));
-				obj.rotateOnAxis(VECTOR_Y, AngleToRad(angle));
-				obj.rotateOnAxis(VECTOR_Z, AngleToRad(angle));
+						item.action(val);
+					});
+				}
+
+
+
+				// animations.forEach(item => {
+
+				// 	// item.model.location.x = val;
+				// 	// item.model.translateX(val);
+				// 	item.model.position.x = val;
+
+				// 	// animation.SetPositionX(item.model,val);
+				// });
+				// var angle = val;
+				// let obj = model.children[0].children[2];
+				// var _arr = obj.rotation.toArray();
+				// _arr[0] =  AngleToRad(angle);
+				// obj.rotation.set(_arr[0],_arr[1],_arr[2],_arr[3]);
+				// obj.setRotationFromQuaternion(EMPTY_QUAT);
+				// obj.rotateOnAxis(VECTOR_X, AngleToRad(angle));
+				// obj.rotateOnAxis(VECTOR_Y, AngleToRad(angle));
+				// obj.rotateOnAxis(VECTOR_Z, AngleToRad(angle));
 			});
 		}
-		angle += 1;
-		
+		angle += 5;
 
-	
+
+
 	}
 
 }
 
 
 
-
-class ObjectPropetyBind {
+/**
+ * 动画驱动块对象
+ */
+class Object3DWithAnimation {
+	/**
+	 * 
+	 * @param {THREE.Object3D} model 对象
+	 * @param {string} property_name 属性名称
+	 * @param {string} property_value TagPath
+	 */
 	constructor(model, property_name, property_value) {
 		this.model = model;
 		this.name = property_name;
-		this.value = property_value;
+		this.tagpath = property_value;
+
+		this.action = null;
+		this.originalVal = null;
+		var propertys = this.name.split('.');
+		if (propertys.length > 1) {
+			var oval;
+			switch (propertys[0].toLocaleLowerCase()) {
+				case "position":
+					let _dir = propertys[1].toLocaleLowerCase();
+
+					switch (_dir) {
+						case 'x':
+							oval = model.position[_dir];
+							this.action = (val) => {
+
+								// model.position[_dir] = parseFloat(val);
+
+								gsap.to(model.position, { x: parseFloat(val) + (oval == undefined ? 0 : oval), duration: 1, ease: 'none' });
+							};
+							break;
+						case 'y':
+							oval = model.position[_dir];
+							this.action = (val) => {
+								// model.position[_dir] = parseFloat(val);
+								gsap.to(model.position, { y: parseFloat(val) + (oval == undefined ? 0 : oval), duration: 1, ease: 'none' });
+							};
+							break;
+						case 'z':
+							oval = model.position[_dir];
+							this.action = (val) => {
+								// model.position[_dir] = parseFloat(val);
+								gsap.to(model.position, { z: parseFloat(val) + (oval == undefined ? 0 : oval), duration: 1, ease: 'none' });
+							};
+
+							break;
+						default:
+							break;
+					}
+					this.originalVal = model.position[_dir];
+					break;
+
+				case "rotation":
+					let _dir1 = propertys[1].toLocaleLowerCase();
+					switch (_dir1) {
+						case 'x':
+							oval = model.rotation[_dir1];
+							this.action = (val) => {
+								console.log(val);
+								// model.rotation.set(val);
+								var _arr = model.rotation.toArray();
+								_arr[0] = AngleToRad(val) + (oval == undefined ? 0 : oval);
+								gsap.to(model.rotation, {
+									x: _arr[0]
+									, duration: 1
+									, ease: 'none'
+								});
+
+							};
+							break;
+						case 'y':
+							oval = model.rotation[_dir1];
+							this.action = (val) => {
+								console.log(val);
+								// model.rotation.set(val);
+								var _arr = model.rotation.toArray();
+								_arr[1] = AngleToRad(val) + (oval == undefined ? 0 : oval);
+								gsap.to(model.rotation, {
+									y: _arr[1]
+									, duration: 1
+									, ease: 'none'
+								});
+							};
+							break;
+						case 'z':
+							oval = model.rotation[_dir1];
+							this.action = (val) => {
+								console.log(val);
+								// model.rotation.set(val);
+								var _arr = model.rotation.toArray();
+								_arr[2] = AngleToRad(val) + (oval == undefined ? 0 : oval);
+								gsap.to(model.rotation, {
+									z: _arr[2]
+									, duration: 1
+									, ease: 'none'
+								});
+							};
+							this.originalVal = model.rotation[_dir1];
+							break;
+						default:
+							break;
+					}
+					break;
+					break;
+
+
+				case "animation":
+					let _dir2 = propertys[1];
+					this.action = (val) => {
+						var _action = ModelActions[_dir2];
+						if (_action == undefined) {
+							return;
+						} else {
+
+
+							if (parseInt(val) == 0) {
+								_action.stop();
+							} else {
+								_action.play();
+							}
+						}
+
+
+					};
+					break;
+				default:
+					break;
+
+			}
+		}
 	}
+
+
+
+
 }
 
 
 
 
-
+/**
+ * 创建测试图形
+ * @returns THREE.GROUP
+ */
 function createTestMesh() {
 	var group = new THREE.Group();
 
@@ -841,7 +1039,7 @@ export function InitThree3D() {
 	if (val != undefined) {
 		option.modelurl = val;
 	} else {
-		option.modelurl = 'http://127.0.0.1/three3d/assert/models/box_4.glb';
+		option.modelurl = 'http://127.0.0.1/three3d/assert/models/box_3.glb';
 		// option.modelurl = 'http://127.0.0.1/three3d/assert/models/t1.fbx';
 		// option.modelurl = undefined;
 	}
@@ -870,7 +1068,7 @@ export function InitThree3D() {
 	}
 
 
-	option.websocketurl = "ws://" + url.hostname + ":" + (parseInt(url.port)+1).toString() + "/three3d";
+	option.websocketurl = "ws://" + url.hostname + ":" + (parseInt(url.port) + 1).toString() + "/three3d";
 
 
 	Init(option);
