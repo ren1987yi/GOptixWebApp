@@ -31,6 +31,7 @@
     "@tweenjs/tween.js": "^23.1.1",
     "apexcharts": "^3.45.2",
     "axios": "^1.6.7",
+    "cubic-spline": "^3.0.3",
     "echarts": "^5.4.3",
     "gsap": "^3.12.5",
     "jquery": "^3.7.1",

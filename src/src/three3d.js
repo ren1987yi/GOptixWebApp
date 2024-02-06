@@ -18,8 +18,8 @@ import { ShaderPass } from "./threejs/jsm/postprocessing/ShaderPass.js"
 import { FXAAShader } from "./threejs/jsm/shaders/FXAAShader.js"
 import Stats from './threejs/jsm/libs/stats.module.js';
 import { forEach, parseInt } from 'lodash';
-import TWEEN from '@tweenjs/tween.js';
 import gsap from 'gsap';
+
 
 
 
@@ -35,12 +35,15 @@ var canvas;
 const stats = new Stats();
 
 class PickHelper {
+	
 	constructor() {
-		this.SelectEffect = 'color1';
+		this.SelectEffect = 'color';
+		this.hitProperty = 'hittest';
 		this.raycaster = new THREE.Raycaster();
 		this.lastpackedObject = null;
 		this.pickedObject = null;
 		this.pickedObjectSavedColor = 0;
+		
 
 		if (this.SelectEffect == 'color') {
 
@@ -99,6 +102,7 @@ class PickHelper {
 
 
 		const intersects = raycaster.intersectObjects(objs);
+		let selObject = null;
 		//console.log("射线器返回的对象", intersects);
 		// intersects.length大于0说明，说明选中了模型
 		if (intersects.length > 0) {
@@ -118,20 +122,60 @@ class PickHelper {
 
 
 			//迭代找出可选中的对象
-			var _obj = intersects[0].object;
-			if (cfgOption.wireframe || 1) {
-				while (_obj.type != 'Mesh') { //先是这个条件咯
-					if (_obj.parent != undefined) {
-						_obj = _obj.parent;
-					} else {
+			// var _obj = intersects[0].object;
+			// if (cfgOption.wireframe || 1) {
+			// 	while (_obj.type != 'Mesh') { //先是这个条件咯
+			// 		if (_obj.parent != undefined) {
+			// 			_obj = _obj.parent;
+			// 		} else {
+			// 			break;
+			// 		}
+			// 	}
+			// }
+
+
+			let i = 0;
+			let _obj = null;
+			while(i<intersects.length){
+				function findParent(child,keyname){
+					if( child.parent != undefined){
+						let __object = child.parent;
+						let p = __object.userData[keyname];
+						if(p != undefined && p == true){
+							_obj = __object;
+							return _obj;
+						}else{
+							_obj = findParent(__object,keyname);
+							if(_obj != null){
+								return _obj;
+							}
+						}
+					}else{
+						return null;
+					}
+				}
+
+
+				let __object = intersects[i].object;
+				let p = __object.userData[this.hitProperty];
+				if(p != undefined && p == true){
+					_obj = __object;
+					break;	
+				}else{
+					_obj = findParent(__object,this.hitProperty);
+					if(_obj != null){
 						break;
 					}
 				}
+
+				i++;
 			}
 
+			selObject = _obj;
+		}
 
-
-
+		if(selObject != null){
+			let _obj = selObject;
 			var data = {
 				type: "SelectObject",
 				args: [_obj.name],
@@ -149,13 +193,54 @@ class PickHelper {
 				});
 
 
-			this.pickedObject = _obj;
-			// // 保存它的颜色
-			this.pickedObjectSavedColor = this.pickedObject.material.emissive.getHex();
-			// // 设置它的发光为 黄色/红色闪烁
-			// this.pickedObject.material.emissive.setHex((time * 8) % 2 > 1 ? 0xFFFF00 : 0xFF0000);
 
-			// outlinePass.selectedObjects = this.pickedObject;
+
+			if(_obj.type == 'Object3D'){
+
+				
+
+				//儿子全部选中
+				this.pickedObject = [_obj];
+
+				function findAllChildren(root,_arr){
+					if(root.children != undefined){
+						root.children.forEach(element => {
+							if(element.type == 'Mesh'){
+
+								_arr.push(element);
+								findAllChildren(element,_arr);
+							}
+						});
+					}
+				}
+
+				findAllChildren(_obj,this.pickedObject);
+
+
+
+			}else{
+
+				this.pickedObject = [_obj];
+			}
+
+
+
+
+
+			if(this.SelectEffect == 'color'){
+
+				// // 保存它的颜色
+				if(Array.isArray(this.pickedObject)){
+
+				}else{
+
+					this.pickedObjectSavedColor = this.pickedObject.material.emissive.getHex();
+				}
+				// // 设置它的发光为 黄色/红色闪烁
+				// this.pickedObject.material.emissive.setHex((time * 8) % 2 > 1 ? 0xFFFF00 : 0xFF0000);
+				
+				// outlinePass.selectedObjects = this.pickedObject;
+			}
 
 
 
@@ -186,17 +271,29 @@ class PickHelper {
 		if (this.SelectEffect == 'color') {
 			if (this.pickedObject != undefined) {
 
-				oldObject.material.emissive.setHex(oldColor);
+				if(oldObject != null){
+
+					oldObject.material.emissive.setHex(oldColor);
+				}
 
 			} else {
 
 				//设置为原来的颜色
-				oldObject.material.emissive.setHex(oldColor);
+				if(oldObject != null){
+
+					oldObject.material.emissive.setHex(oldColor);
+				}
 
 			}
 		} else {
 			if (this.pickedObject != undefined) {
-				SetupEffect(width, height, [this.pickedObject]);
+				if(Array.isArray(this.pickedObject)){
+
+					SetupEffect(width, height, this.pickedObject);
+				}else{
+
+					SetupEffect(width, height, [this.pickedObject]);
+				}
 
 			} else {
 				SetupEffect(width, height, []);
@@ -610,28 +707,37 @@ function LoadFBX(url, option) {
 
 
 
+/**
+ * 
+ * @param {THREE.Group} group 模型要放置的组
+ * @param {THREE.Object3D} object 加载的模型
+ * 
+ */
 function LoadedModel(group, object) {
 	var m = object;
 	console.log("模型", m);
+
 	var sx = cfgOption.modelscale[0];
 	var sy = cfgOption.modelscale[1];
 	var sz = cfgOption.modelscale[2];
-
+	//设置缩放比例
 	m.scale.set(sx, sy, sz);
+
 
 	var box3 = new THREE.Box3();
 	box3.expandByObject(m);
 	console.log('包围盒', box3);
 
+
 	var center = new THREE.Vector3();
 	center.addVectors(box3.max, box3.min);
-
+	//模型居中放置
 	m.position.set(-center.x / 2, -center.y / 2, -center.z / 2);
 
 	// m.position.set(0,0,0);
 
+	//线框模式
 	if (cfgOption.wireframe) {
-
 		edgeGeometryWireframe(m, true, group);
 		// lineGroup.scale.set(sx, sy, sz);
 	}
@@ -639,6 +745,7 @@ function LoadedModel(group, object) {
 	group.add(m);
 	CollectModelUserData(m);
 
+	//webSocket通讯，实时更新标签数据
 	webSocketConnect();
 
 }
@@ -788,11 +895,32 @@ function AngleToRad(angle) {
 	console.log("angle to rad", THREE.MathUtils.degToRad(angle));
 	return THREE.MathUtils.degToRad(angle);
 }
+
+/**
+ * web socket 实时更新标签数据
+ */
+
 function webSocketConnect() {
-	const socket = new WebSocket(cfgOption.websocketurl);
+	let socket = new WebSocket(cfgOption.websocketurl);
+	let isReconnecting = false;
+
+	function reConnect(){
+		if(isReconnecting){
+			return;
+		}
+		isReconnecting = true;
+		setInterval(() => {
+			if(isReconnecting){
+
+				socket = new WebSocket(cfgOption.websocketurl);	
+				console.log("reconnecting...");
+			}
+		}, 3000);
+	}
+
 
 	socket.onopen = () => {
-
+		isReconnecting = false;
 		// var tags = new Array();
 		// animations.forEach(item => {
 
@@ -808,6 +936,25 @@ function webSocketConnect() {
 		socket.send(JSON.stringify(dto));
 
 	};
+
+	socket.onerror = ()=>{
+		console.log("web socket is error");
+
+		
+		reConnect();
+
+		
+	};
+
+
+	socket.onclose = () =>{
+		console.log("web socket is closed");
+
+		
+		reConnect();
+
+	};
+
 
 
 	socket.onmessage = (e) => {
@@ -827,23 +974,7 @@ function webSocketConnect() {
 
 
 
-				// animations.forEach(item => {
-
-				// 	// item.model.location.x = val;
-				// 	// item.model.translateX(val);
-				// 	item.model.position.x = val;
-
-				// 	// animation.SetPositionX(item.model,val);
-				// });
-				// var angle = val;
-				// let obj = model.children[0].children[2];
-				// var _arr = obj.rotation.toArray();
-				// _arr[0] =  AngleToRad(angle);
-				// obj.rotation.set(_arr[0],_arr[1],_arr[2],_arr[3]);
-				// obj.setRotationFromQuaternion(EMPTY_QUAT);
-				// obj.rotateOnAxis(VECTOR_X, AngleToRad(angle));
-				// obj.rotateOnAxis(VECTOR_Y, AngleToRad(angle));
-				// obj.rotateOnAxis(VECTOR_Z, AngleToRad(angle));
+			
 			});
 		}
 		angle += 5;
@@ -974,7 +1105,7 @@ class Object3DWithAnimation {
 						} else {
 
 
-							if (parseInt(val) == 0) {
+							if (parseInt(val) <= 0) {
 								_action.stop();
 							} else {
 								_action.play();
@@ -1029,6 +1160,9 @@ function createTestMesh() {
 }
 
 
+/**
+ * 初始化 three3d所有工作
+ */
 export function InitThree3D() {
 	require('./three3d.css');
 	let url = new URL(window.location.href);
@@ -1075,12 +1209,15 @@ export function InitThree3D() {
 	// document.body.style.cssText += 'overflow: hidden;';
 	// animate();
 
-	windowResize();
-	window.onresize = function () { windowResize(); };
+	windowResizeHandle();
+	window.onresize = function () { windowResizeHandle(); };
 }
 
 
-function windowResize() {
+/**
+ * window resize handle
+ */
+function windowResizeHandle() {
 	var width = window.innerWidth;
 	var height = window.innerHeight;
 

@@ -9,6 +9,7 @@ import { InitEditor } from './codeeditor.js';
 import { InitThree3D } from './three3d.js';
 import { InitApex } from './apexChart.js';
 import { InitEChart } from './eChart.js';
+import { InitCubic } from './cubic.js';
 
 function component() {
 	const element = document.createElement('div');
@@ -50,6 +51,16 @@ if (page == undefined) {
 } else {
 
 	switch (page.toLowerCase()) {
+		case 'cubic':
+		
+
+			require('./eChart.css');
+			var div = document.createElement('div');
+			div.id = 'chart';
+			
+			document.body.appendChild(div);
+			InitCubic('chart');
+			break;
 		case 'grapheditor':
 			document.body.appendChild(component());
 			InitGraphEditor('main');
