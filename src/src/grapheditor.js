@@ -322,6 +322,7 @@ export function InitGraphEditor(container_id) {
 		roots.push(paths[i]);
 	}
 
+	roots.push("grapheditor");
 	var root = roots.join('/');
 
 	const editor = new GraphEditor(container_id, nodes, root);
